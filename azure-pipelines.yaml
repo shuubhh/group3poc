@@ -1,0 +1,31 @@
+trigger:
+- main
+ 
+pool:
+  vmImage: ubuntu-latest
+ 
+steps:
+- task: ArchiveFiles@2
+  inputs:
+    rootFolderOrFile: '$(System.DefaultWorkingDirectory)'
+    includeRootFolder: false
+    archiveType: 'zip'
+    archiveFile: '$(Build.ArtifactStagingDirectory)/helloapp.zip'
+    replaceExistingArchive: true
+ 
+- task: PublishBuildArtifacts@1
+  inputs:
+    PathtoPublish: '$(Build.ArtifactStagingDirectory)'
+    ArtifactName: 'drop'
+    publishLocation: 'Container'
+ 
+# Deploy to VMSS
+- task: AzureVmssDeployment@0
+  inputs:
+    ConnectedServiceName: 'pipesvconn'
+    Action: 'Update VMSS'
+    vmssName: 'hello-vmss'
+    resourceGroupName: 'group3poc'
+    upgradePolicyMode: 'Automatic'
+    packageFile: '$(Pipeline.Workspace)/drop/helloapp.zip'
+    customScriptFile: 'install.sh'
