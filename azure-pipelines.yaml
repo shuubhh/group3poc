@@ -1,14 +1,14 @@
 trigger:
 - main
  
-pool:
-  vmImage: ubuntu-latest
- 
 stages:
+# ---------- Build Stage ----------
 - stage: Build
   displayName: "Build Hello World App"
   jobs:
   - job: Build
+    pool:
+      name: VMSS-Pool
     steps:
     - task: ArchiveFiles@2
       inputs:
@@ -24,11 +24,14 @@ stages:
         ArtifactName: 'drop'
         publishLocation: 'Container'
  
+# ---------- Deploy Stage ----------
 - stage: Deploy
   displayName: "Deploy to Azure VMSS via Environment"
   jobs:
   - deployment: DeployToVMSS
     displayName: "Deploy Hello World"
+    pool:
+      name: VMSS-Pool
     environment:
       name: "testenv"
       resourceType: VirtualMachine
