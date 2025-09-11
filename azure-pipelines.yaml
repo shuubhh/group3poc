@@ -8,7 +8,7 @@ stages:
   jobs:
   - job: Build
     pool:
-      name: VMSS-Pool
+      name: vmsspocgroup
     steps:
     - task: ArchiveFiles@2
       inputs:
@@ -31,7 +31,7 @@ stages:
   - deployment: DeployToVMSS
     displayName: "Deploy Hello World"
     pool:
-      name: VMSS-Pool
+      name: vmsspocgroup
     environment:
       name: "testenv"
       resourceType: VirtualMachine
