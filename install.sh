@@ -12,8 +12,8 @@ sudo mkdir -p $APP_DIR
 sudo rm -rf $APP_DIR/*
  
 echo "🔹 Copying build artifacts..."
-cp -r * $APP_DIR
-cd $APP_DIR
+sudo cp -r * $APP_DIR
+sudo cd $APP_DIR
  
 echo "🔹 Installing dependencies..."
 npm install
