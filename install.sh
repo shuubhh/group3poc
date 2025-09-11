@@ -1,45 +1,41 @@
 #!/bin/bash
 set -ex
 
-APP_DIR="/var/www/helloapp"
-ZIP_PATH="/home/azureagent/azagent/_work/1/drop/helloapp.zip"
-EXTRACT_DIR="helloapp"
-
 echo "🔹 Updating system packages..."
 sudo apt-get update -y
 sudo apt-get install -y nodejs npm unzip
 
 echo "🔹 Verifying zip file exists..."
-ls -lh "$ZIP_PATH"
+ls -lh /home/azureagent/azagent/_work/1/drop/helloapp.zip
 
 echo "🔹 Creating extraction directory..."
-mkdir -p "$EXTRACT_DIR"
+mkdir -p helloapp
 
 echo "🔹 Unzipping artifacts..."
-unzip "$ZIP_PATH" -d "$EXTRACT_DIR"
+unzip /home/azureagent/azagent/_work/1/drop/helloapp.zip -d helloapp
 
 echo "📂 Listing extracted files:"
-ls -la "$EXTRACT_DIR"
+ls -la helloapp
 
 echo "🔹 Setting up application directory..."
-sudo mkdir -p "$APP_DIR"
-sudo rm -rf "$APP_DIR"/*
+sudo mkdir -p /var/www/helloapp
+sudo rm -rf /var/www/helloapp/*
 
 echo "🔹 Copying build artifacts to application directory..."
-sudo cp -r "$EXTRACT_DIR"/* "$APP_DIR"
+sudo cp -r helloapp/* /var/www/helloapp
 
 echo "📂 Listing contents of application directory:"
-sudo ls -la "$APP_DIR"
+sudo ls -la /var/www/helloapp
 
 echo "🔹 Installing dependencies..."
-cd "$APP_DIR"
+cd /var/www/helloapp
 sudo npm install
 
 echo "🔹 Installing and starting app with PM2..."
 sudo npm install -g pm2
 export PATH=$PATH:$(npm bin -g)
 pm2 start server.js --name helloapp || pm2 restart helloapp
-pm2 startup systemd -u "$USER" --hp "$HOME"
+pm2 startup systemd -u azureagent --hp /home/azureagent
 pm2 save
 
 echo "✅ Deployment complete. App running on port 80."
