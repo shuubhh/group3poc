@@ -1,58 +1,51 @@
-#!/bin/bash
-set -ex
+trigger:
+- main
 
-# Define the path to the ZIP file
-ZIP_PATH="/home/azureagent/azagent/azagent/_work/1/drop/helloapp.zip"
+stages:
+# ---------- Build Stage ----------
+- stage: Build
+  displayName: "Build Hello World App"
+  jobs:
+  - job: Build
+    pool:
+      name: vmsspocap
+    steps:
+    - task: ArchiveFiles@2
+      inputs:
+        rootFolderOrFile: '$(System.DefaultWorkingDirectory)'
+        includeRootFolder: false
+        archiveType: 'zip'
+        archiveFile: '$(Build.ArtifactStagingDirectory)/helloapp.zip'
+        replaceExistingArchive: true
 
-echo "📦 Using zip file: $ZIP_PATH"
+    - task: PublishBuildArtifacts@1
+      inputs:
+        PathtoPublish: '$(Build.ArtifactStagingDirectory)'
+        ArtifactName: 'drop'
+        publishLocation: 'Container'
 
-# Check if the ZIP file exists
-if [ ! -f "$ZIP_PATH" ]; then
-  echo "❌ Zip file not found at $ZIP_PATH"
-  exit 1
-fi
+# ---------- Deploy Stage ----------
+- stage: Deploy
+  displayName: "Deploy to Azure VMSS via Environment"
+  jobs:
+  - deployment: DeployToVMSS
+    displayName: "Deploy Hello World"
+    pool:
+      name: vmsspocap
+    environment:
+      name: "testenv"
+      resourceType: VirtualMachine
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - download: current
+            artifact: drop
 
-echo "🔹 Installing dependencies..."
-sudo apt-get update -y
-sudo apt-get install -y nodejs npm unzip
-
-echo "🔹 Unzipping artifacts..."
-mkdir -p helloapp
-unzip -o "$ZIP_PATH" -d helloapp
-
-# Check if unzip was successful
-if [ $? -ne 0 ]; then
-  echo "❌ Failed to unzip $ZIP_PATH"
-  exit 1
-fi
-
-echo "🔹 Setting up application directory..."
-sudo mkdir -p /var/www/helloapp
-sudo rm -rf /var/www/helloapp/*
-sudo cp -r helloapp/* /var/www/helloapp
-
-echo "🔹 Installing Node.js dependencies..."
-cd /var/www/helloapp
-sudo npm install --omit=dev
-
-echo "🔹 Checking PM2 installation..."
-if ! command -v pm2 >/dev/null 2>&1; then
-  echo "📦 PM2 not found, installing..."
-  sudo npm install -g pm2
-else
-  echo "✅ PM2 already installed."
-fi
-
-# Ensure global npm binaries are in PATH
-export PATH=$PATH:$(npm bin -g)
-
-echo "🔹 Starting app with PM2..."
-pm2 start server.js --name helloapp || pm2 restart helloapp
-
-echo "🔹 Configuring PM2 to auto-start on reboot..."
-pm2 startup systemd -u $(whoami) --hp "$(eval echo ~$USER)" --silent
-
-echo "🔹 Saving PM2 process list..."
-pm2 save
-
-echo "✅ Deployment complete."
+          - script: |
+              unzip $(Pipeline.Workspace)/drop/helloapp.zip -d helloapp
+              cd helloapp
+              chmod +x install.sh
+              ./install.sh
+            displayName: "Run install.sh on VMSS instance"
+ 
