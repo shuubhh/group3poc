@@ -1,7 +1,7 @@
 #!/bin/bash
 set -ex
  
-ZIP_PATH="/home/azureagent/azagent/azagent/_work/1/drop/helloapp.zip"
+ZIP_PATH="$PWD/drop/helloapp.zip"
  
 echo "📦 Using zip file: $ZIP_PATH"
  
