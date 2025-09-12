@@ -43,12 +43,14 @@ stages:
             artifact: drop
  
           - script: |
-              unzip $(Pipeline.Workspace)/drop/helloapp.zip -d helloapp
+              ls -lh $(Pipeline.Workspace)/drop/
+              unzip -o $(Pipeline.Workspace)/drop/helloapp.zip -d helloapp
               cd helloapp
               chmod +x install.sh
               ./install.sh
             displayName: "Run install.sh on VMSS instance"
  
+
 
 
 
