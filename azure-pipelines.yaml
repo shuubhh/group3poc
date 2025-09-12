@@ -32,6 +32,9 @@ stages:
     displayName: "Deploy Hello World"
     pool:
       name: apool
+    environment:
+      name: "env"
+      resourceType: VirtualMachine  
     strategy:
       runOnce:
         deploy:
@@ -46,4 +49,5 @@ stages:
               ./install.sh
             displayName: "Run install.sh on VMSS instance"
  
+
 
