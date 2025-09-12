@@ -30,8 +30,6 @@ stages:
   jobs:
   - deployment: DeployToVMSS
     displayName: "Deploy Hello World"
-    pool:
-      name: apool
     environment:
       name: "env"
       resourceType: VirtualMachine  
@@ -49,5 +47,6 @@ stages:
               ./install.sh
             displayName: "Run install.sh on VMSS instance"
  
+
 
 
