@@ -8,7 +8,7 @@ stages:
   jobs:
   - job: Build
     pool:
-      name: vmsspocap
+      name: apool
     steps:
     - task: ArchiveFiles@2
       inputs:
@@ -31,10 +31,7 @@ stages:
   - deployment: DeployToVMSS
     displayName: "Deploy Hello World"
     pool:
-      name: vmsspocap
-    environment:
-      name: "testenv"
-      resourceType: VirtualMachine
+      name: apool
     strategy:
       runOnce:
         deploy:
@@ -49,3 +46,4 @@ stages:
               ./install.sh
             displayName: "Run install.sh on VMSS instance"
  
+
