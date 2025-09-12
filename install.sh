@@ -19,7 +19,7 @@ sudo apt-get install -y nodejs npm unzip
  
 echo "🔹 Unzipping artifacts..."
 mkdir -p helloapp
-unzip -o "$ZIP_PATH" -d helloapp
+unzip -o -q "$ZIP_PATH" -d helloapp   # -o overwrite, -q quiet (non-interactive)
  
 echo "🔹 Setting up application directory..."
 sudo mkdir -p /var/www/helloapp
@@ -30,17 +30,23 @@ echo "🔹 Installing Node.js dependencies..."
 cd /var/www/helloapp
 sudo npm install --omit=dev
  
-echo "🔹 Starting app with PM2..."
-sudo npm install -g pm2
+echo "🔹 Checking PM2 installation..."
+if ! command -v pm2 >/dev/null 2>&1; then
+  echo "📦 PM2 not found, installing..."
+  sudo npm install -g pm2
+else
+  echo "✅ PM2 already installed."
+fi
+ 
 export PATH=$PATH:$(npm bin -g)
  
-# Start / restart app
+echo "🔹 Starting app with PM2..."
 pm2 start server.js --name helloapp || pm2 restart helloapp
  
-# Configure PM2 to auto-start on reboot
-pm2 startup systemd -u $(whoami) --hp $(eval echo ~$USER) --silent
+echo "🔹 Configuring PM2 to auto-start on reboot..."
+pm2 startup systemd -u $(whoami) --hp "$(eval echo ~$USER)" --silent
  
-# Save process list
+echo "🔹 Saving PM2 process list..."
 pm2 save
  
 echo "✅ Deployment complete."
