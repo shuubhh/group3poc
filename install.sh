@@ -1,51 +1,28 @@
-trigger:
-- main
-
-stages:
-# ---------- Build Stage ----------
-- stage: Build
-  displayName: "Build Hello World App"
-  jobs:
-  - job: Build
-    pool:
-      name: vmsspocap
-    steps:
-    - task: ArchiveFiles@2
-      inputs:
-        rootFolderOrFile: '$(System.DefaultWorkingDirectory)'
-        includeRootFolder: false
-        archiveType: 'zip'
-        archiveFile: '$(Build.ArtifactStagingDirectory)/helloapp.zip'
-        replaceExistingArchive: true
-
-    - task: PublishBuildArtifacts@1
-      inputs:
-        PathtoPublish: '$(Build.ArtifactStagingDirectory)'
-        ArtifactName: 'drop'
-        publishLocation: 'Container'
-
-# ---------- Deploy Stage ----------
-- stage: Deploy
-  displayName: "Deploy to Azure VMSS via Environment"
-  jobs:
-  - deployment: DeployToVMSS
-    displayName: "Deploy Hello World"
-    pool:
-      name: vmsspocap
-    environment:
-      name: "testenv"
-      resourceType: VirtualMachine
-    strategy:
-      runOnce:
-        deploy:
-          steps:
-          - download: current
-            artifact: drop
-
-          - script: |
-              unzip $(Pipeline.Workspace)/drop/helloapp.zip -d helloapp
-              cd helloapp
-              chmod +x install.sh
-              ./install.sh
-            displayName: "Run install.sh on VMSS instance"
+#!/bin/bash
+set -e
+ 
+APP_DIR="/var/www/helloapp"
+ 
+echo "🔹 Updating system packages..."
+sudo apt-get update -y
+sudo apt-get install -y nodejs npm
+ 
+echo "🔹 Setting up application directory..."
+sudo mkdir -p $APP_DIR
+sudo rm -rf $APP_DIR/*
+ 
+echo "🔹 Copying build artifacts..."
+cp -r * $APP_DIR
+cd $APP_DIR
+ 
+echo "🔹 Installing dependencies..."
+npm install
+ 
+echo "🔹 Starting app with PM2..."
+sudo npm install -g pm2
+pm2 start server.js --name helloapp || pm2 restart helloapp
+pm2 startup systemd -u $USER --hp $HOME
+pm2 save
+ 
+echo "✅ Deployment complete. App running on port 80."
  
