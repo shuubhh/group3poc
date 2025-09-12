@@ -1,17 +1,14 @@
 #!/bin/bash
 set -ex
  
-echo "🔹 Detecting zip file path..."
-if [ -f /home/azureagent/azagent/_work/1/drop/helloapp.zip ]; then
-  ZIP_PATH="/home/azureagent/azagent/_work/1/drop/helloapp.zip"
-elif [ -f /home/shubh/azagent/_work/1/drop/helloapp.zip ]; then
-  ZIP_PATH="/home/shubh/azagent/_work/1/drop/helloapp.zip"
-else
-  echo "❌ Zip file not found in known locations."
-  exit 1
-fi
+ZIP_PATH="$(Pipeline.Workspace)/drop/helloapp.zip"
  
 echo "📦 Using zip file: $ZIP_PATH"
+ 
+if [ ! -f "$ZIP_PATH" ]; then
+  echo "❌ Zip file not found at $ZIP_PATH"
+  exit 1
+fi
  
 echo "🔹 Installing dependencies..."
 sudo apt-get update -y
@@ -19,7 +16,7 @@ sudo apt-get install -y nodejs npm unzip
  
 echo "🔹 Unzipping artifacts..."
 mkdir -p helloapp
-unzip -o -q "$ZIP_PATH" -d helloapp   # -o overwrite, -q quiet (non-interactive)
+unzip -o -q "$ZIP_PATH" -d helloapp
  
 echo "🔹 Setting up application directory..."
 sudo mkdir -p /var/www/helloapp
