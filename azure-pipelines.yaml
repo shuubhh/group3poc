@@ -1,57 +1,56 @@
 trigger:
-- main
+  branches:
+    include:
+      - main
+ 
+pool:
+  name: "ap1"    # your self-hosted agent pool
  
 stages:
-# ---------- Build Stage ----------
-- stage: Build
-  displayName: "Build Hello World App"
-  jobs:
-  - job: Build
-    pool:
-      name: apool
-    steps:
-    - task: ArchiveFiles@2
-      inputs:
-        rootFolderOrFile: '$(System.DefaultWorkingDirectory)'
-        includeRootFolder: false
-        archiveType: 'zip'
-        archiveFile: '$(Build.ArtifactStagingDirectory)/helloapp.zip'
-        replaceExistingArchive: true
- 
-    - task: PublishBuildArtifacts@1
-      inputs:
-        PathtoPublish: '$(Build.ArtifactStagingDirectory)'
-        ArtifactName: 'drop'
-        publishLocation: 'Container'
- 
-# ---------- Deploy Stage ----------
-- stage: Deploy
-  displayName: "Deploy to Azure VMSS via Environment"
-  jobs:
-  - deployment: DeployToVMSS
-    displayName: "Deploy Hello World"
-    pool:
-      name: apool 
-    environment:
-      name: "env"
-      resourceType: VirtualMachine  
-    strategy:
-      runOnce:
-        deploy:
-          steps:
-          - download: current
-            artifact: drop
+  - stage: Build
+    displayName: "Build Stage"
+    jobs:
+      - job: BuildApp
+        steps:
+          - task: NodeTool@0
+            inputs:
+              versionSpec: "20.x"
+            displayName: "Use Node.js 20.x"
  
           - script: |
-              ls -lh $(Pipeline.Workspace)/drop/
-              unzip -o $(Pipeline.Workspace)/drop/helloapp.zip -d helloapp
-              cd helloapp
-              chmod +x install.sh
-              ./install.sh
-            displayName: "Run install.sh on VMSS instance"
+              npm install
+              echo "Build complete."
+            displayName: "Install Dependencies"
  
-
-
-
-
-
+          - task: ArchiveFiles@2
+            inputs:
+              rootFolderOrFile: "$(System.DefaultWorkingDirectory)"
+              includeRootFolder: false
+              archiveType: "zip"
+              archiveFile: "$(Build.ArtifactStagingDirectory)/app.zip"
+              replaceExistingArchive: true
+            displayName: "Archive App Files"
+ 
+          - publish: "$(Build.ArtifactStagingDirectory)/app.zip"
+            artifact: drop
+            displayName: "Publish Build Artifact"
+ 
+  - stage: Deploy
+    displayName: "Deploy Stage"
+    dependsOn: Build
+    jobs:
+      - deployment: DeployApp
+        environment: "env1"
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - download: current
+                  artifact: drop
+                  displayName: "Download Artifact"
+ 
+                - script: |
+                    unzip $(Pipeline.Workspace)/drop/app.zip -d /tmp/helloapp
+                    chmod +x /tmp/helloapp/install.sh
+                    sudo /tmp/helloapp/install.sh
+                  displayName: "Run Install Script on VMSS"
