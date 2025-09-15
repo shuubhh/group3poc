@@ -1,56 +1,109 @@
 trigger:
-  branches:
-    include:
-      - main
+- main
  
 pool:
-  name: "ap1"    # your self-hosted agent pool
+  name: "ap1"
  
 stages:
-  - stage: Build
-    displayName: "Build Stage"
-    jobs:
-      - job: BuildApp
-        steps:
-          - task: NodeTool@0
-            inputs:
-              versionSpec: "20.x"
-            displayName: "Use Node.js 20.x"
+# ----------------------
+# 1. Build
+# ----------------------
+- stage: Build
+  displayName: "Build Stage"
+  jobs:
+  - job: Build
+    steps:
+    - task: NodeTool@0
+      inputs:
+        versionSpec: '20.x'
+      displayName: "Use Node.js"
  
-          - script: |
-              npm install
-              echo "Build complete."
-            displayName: "Install Dependencies"
+    - script: |
+        npm install --production
+        zip -r app.zip *
+      displayName: "Build and Zip App"
  
-          - task: ArchiveFiles@2
-            inputs:
-              rootFolderOrFile: "$(System.DefaultWorkingDirectory)"
-              includeRootFolder: false
-              archiveType: "zip"
-              archiveFile: "$(Build.ArtifactStagingDirectory)/app.zip"
-              replaceExistingArchive: true
-            displayName: "Archive App Files"
+    - task: PublishBuildArtifacts@1
+      inputs:
+        pathToPublish: "$(System.DefaultWorkingDirectory)/app.zip"
+        artifactName: "drop"
+      displayName: "Publish Artifact"
  
-          - publish: "$(Build.ArtifactStagingDirectory)/app.zip"
-            artifact: drop
-            displayName: "Publish Build Artifact"
+# ----------------------
+# 2. Test
+# ----------------------
+- stage: Test
+  displayName: "Smoke Test Stage"
+  dependsOn: Build
+  jobs:
+  - job: SmokeTest
+    steps:
+    - task: DownloadBuildArtifacts@1
+      inputs:
+        artifactName: 'drop'
+        downloadPath: '$(Pipeline.Workspace)'
  
-  - stage: Deploy
-    displayName: "Deploy Stage"
-    dependsOn: Build
-    jobs:
-      - deployment: DeployApp
-        environment: "env1"
-        strategy:
-          runOnce:
-            deploy:
-              steps:
-                - download: current
-                  artifact: drop
-                  displayName: "Download Artifact"
+    - script: |
+        mkdir test
+        cd test
+        unzip $(Pipeline.Workspace)/drop/app.zip
+        npm install --production
+        nohup npm start &
+        sleep 5
+        curl -f http://localhost:80
+      displayName: "Run Smoke Test"
  
-                - script: |
-                    unzip $(Pipeline.Workspace)/drop/app.zip -d /tmp/helloapp
-                    chmod +x /tmp/helloapp/install.sh
-                    sudo /tmp/helloapp/install.sh
-                  displayName: "Run Install Script on VMSS"
+# ----------------------
+# 3. Deploy (Image Builder + Gallery + VMSS)
+# ----------------------
+- stage: Deploy
+  displayName: "Deploy Stage"
+  dependsOn: Test
+  jobs:
+  - job: CreateImage
+    steps:
+    - task: DownloadBuildArtifacts@1
+      inputs:
+        artifactName: 'drop'
+        downloadPath: '$(Pipeline.Workspace)'
+ 
+    - task: AzureCLI@2
+      inputs:
+        azureSubscription: "azconnsvc"
+        scriptType: bash
+        scriptLocation: inlineScript
+        inlineScript: |
+          set -e
+          RESOURCE_GROUP="finalpocgroup"
+          GALLERY_NAME="gal1"
+          IMAGE_DEF="vmdef1"
+          IMAGE_TEMPLATE="vmdef1temp"
+          LOCATION="NorthCentralUS"
+          STORAGE_ACCOUNT="shubhstac"
+          CONTAINER_NAME="artifacts"
+          ARTIFACT_PATH="$(Pipeline.Workspace)/drop/app.zip"
+ 
+          echo "=== Uploading artifact to storage ==="
+          az storage blob upload \
+            --account-name $STORAGE_ACCOUNT \
+            --container-name $CONTAINER_NAME \
+            --file $ARTIFACT_PATH \
+            --name app.zip \
+            --auth-mode login \
+            --overwrite
+ 
+   #       echo "=== Create/Update Image Builder Template ==="
+    #      az image builder create \
+     #       --resource-group $RESOURCE_GROUP \
+      #      --name $IMAGE_TEMPLATE \
+       #     --location $LOCATION \
+        #    --source "/subscriptions/7c58d880-5fa8-46e0-809e-31e1bb700d40/resourceGroups/$RESOURCE_GROUP/providers/Microsoft.Compute/galleries/$GALLERY_NAME/images/$IMAGE_DEF/versions/1.0.0" \
+         #   --customizer type=Shell,scriptUri=https://$STORAGE_ACCOUNT.blob.core.windows.net/$CONTAINER_NAME/install_app.sh \
+          #  --distribute type=SharedImageGallery,galleryImageId="/subscriptions/7c58d880-5fa8-46e0-809e-31e1bb700d40/resourceGroups/$RESOURCE_GROUP/providers/Microsoft.Compute/galleries/$GALLERY_NAME/images/$IMAGE_DEF",runOutputName=output1
+ 
+          echo "=== Running Image Builder (this may take a while) ==="
+          az image builder run \
+            --name $IMAGE_TEMPLATE \
+            --resource-group $RESOURCE_GROUP
+ 
+          echo "=== New image version created in Azure Compute Gallery ==="
