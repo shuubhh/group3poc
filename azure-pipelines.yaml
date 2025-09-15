@@ -92,18 +92,10 @@ stages:
             --auth-mode login \
             --overwrite
  
-   #       echo "=== Create/Update Image Builder Template ==="
-    #      az image builder create \
-     #       --resource-group $RESOURCE_GROUP \
-      #      --name $IMAGE_TEMPLATE \
-       #     --location $LOCATION \
-        #    --source "/subscriptions/7c58d880-5fa8-46e0-809e-31e1bb700d40/resourceGroups/$RESOURCE_GROUP/providers/Microsoft.Compute/galleries/$GALLERY_NAME/images/$IMAGE_DEF/versions/1.0.0" \
-         #   --customizer type=Shell,scriptUri=https://$STORAGE_ACCOUNT.blob.core.windows.net/$CONTAINER_NAME/install_app.sh \
-          #  --distribute type=SharedImageGallery,galleryImageId="/subscriptions/7c58d880-5fa8-46e0-809e-31e1bb700d40/resourceGroups/$RESOURCE_GROUP/providers/Microsoft.Compute/galleries/$GALLERY_NAME/images/$IMAGE_DEF",runOutputName=output1
- 
           echo "=== Running Image Builder (this may take a while) ==="
           az image builder run \
             --name $IMAGE_TEMPLATE \
             --resource-group $RESOURCE_GROUP
  
           echo "=== New image version created in Azure Compute Gallery ==="
+
