@@ -3,26 +3,25 @@ set -e
  
 APP_DIR="/var/www/helloapp"
  
-echo "🔹 Updating system packages..."
-sudo apt-get update -y
-sudo apt-get install -y nodejs npm
+echo "=== Deploying app to $APP_DIR ==="
  
-echo "🔹 Setting up application directory..."
+# Ensure app dir exists
 sudo mkdir -p $APP_DIR
-sudo rm -rf $APP_DIR/*
  
-echo "🔹 Copying build artifacts..."
-sudo cp -r * $APP_DIR
+# Copy new files (overwrite old)
+sudo cp -r ./* $APP_DIR/
+ 
+# Install dependencies
 cd $APP_DIR
+npm install --only=production
  
-echo "🔹 Installing dependencies..."
-sudo npm install
+# Restart app (using PM2 or systemd)
+if command -v pm2 >/dev/null 2>&1; then
+  echo "Restarting app with PM2..."
+  pm2 restart hello-vmss || pm2 start server.js --name hello-vmss
+else
+  echo "Restarting app with systemd..."
+  sudo systemctl restart hello-vmss.service || echo "Systemd service not found. Please configure one."
+fi
  
-echo "🔹 Starting app with PM2..."
-sudo npm install -g pm2
-sudo pm2 start server.js --name helloapp || sudo pm2 restart helloapp
-sudo pm2 startup systemd -u $USER --hp $HOME
-sudo pm2 save
- 
-echo "✅ Deployment complete. App running on port 80."
- 
+echo "=== Deployment completed successfully ==="
