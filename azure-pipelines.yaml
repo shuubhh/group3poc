@@ -82,6 +82,12 @@ stages:
           STORAGE_ACCOUNT="shubhstac"
           CONTAINER_NAME="artifacts"
           ARTIFACT_PATH="$(Pipeline.Workspace)/drop/app.zip"
+
+          az storage blob list \
+            --account-name $STORAGE_ACCOUNT \
+            --container-name $CONTAINER_NAME \
+            --auth-mode login
+
  
           echo "=== Uploading artifact to storage ==="
           az storage blob upload \
