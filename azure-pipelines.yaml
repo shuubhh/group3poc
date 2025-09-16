@@ -50,7 +50,7 @@ stages:
         npm install --production
         nohup npm start &
         sleep 5
-        curl -f http://localhost:80
+        curl -f http://localhost:3000
       displayName: "Run Smoke Test"
  
 # ----------------------
@@ -114,9 +114,7 @@ stages:
           echo "=== Running Image Builder (this may take a while) ==="
           az image builder run \
             --name $IMAGE_TEMPLATE \
-            --resource-group $RESOURCE_GROUP \
-            --image-version $NEW_VERSION \
-            --image-name $IMAGE_DEF
+            --resource-group $RESOURCE_GROUP
  
           echo "=== New image version $NEW_VERSION created in Azure Compute Gallery ==="
 
