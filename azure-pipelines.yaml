@@ -76,7 +76,7 @@ stages:
           set -e
           RESOURCE_GROUP="finalpocgroup"
           GALLERY_NAME="gal1"
-          IMAGE_VERSION="2.0.0"
+          IMAGE_VERSION=$(date +%Y.%m.%d.%H%M)
           IMAGE_DEF="vmdef1"
           IMAGE_TEMPLATE="vmdef1temp"
           LOCATION="NorthCentralUS"
@@ -104,6 +104,7 @@ stages:
             --name $IMAGE_TEMPLATE \
             --resource-group $RESOURCE_GROUP
             --image-version $IMAGE_VERSION
+            --image-name vmdef1
  
           echo "=== New image version created in Azure Compute Gallery ==="
 
