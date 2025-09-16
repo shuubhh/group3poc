@@ -54,6 +54,7 @@ stages:
       displayName: "Run Smoke Test"
  
 # ----------------------
+# ----------------------
 # 3. Deploy (Image Builder + Gallery + VMSS)
 # ----------------------
 - stage: Deploy
@@ -76,19 +77,30 @@ stages:
           set -e
           RESOURCE_GROUP="finalpocgroup"
           GALLERY_NAME="gal1"
-          IMAGE_VERSION="2.0.0"
           IMAGE_DEF="vmdef1"
           IMAGE_TEMPLATE="vmdef1temp"
           LOCATION="NorthCentralUS"
           STORAGE_ACCOUNT="shubhstac"
           CONTAINER_NAME="artifacts"
           ARTIFACT_PATH="$(Pipeline.Workspace)/drop/app.zip"
-
-          az storage blob list \
-            --account-name $STORAGE_ACCOUNT \
-            --container-name $CONTAINER_NAME \
-            --auth-mode login
-
+ 
+          echo "=== Detecting latest image version ==="
+          LATEST_VERSION=$(az sig image-version list \
+            --resource-group $RESOURCE_GROUP \
+            --gallery-name $GALLERY_NAME \
+            --gallery-image-definition $IMAGE_DEF \
+            --query "[-1].name" -o tsv)
+ 
+          if [ -z "$LATEST_VERSION" ]; then
+            # If no version exists yet, start at 0.0.0
+            NEW_VERSION="0.0.0"
+          else
+            IFS='.' read -r MAJOR MINOR PATCH <<< "$LATEST_VERSION"
+            PATCH=$((PATCH+1))
+            NEW_VERSION="$MAJOR.$MINOR.$PATCH"
+          fi
+ 
+          echo "Using new image version: $NEW_VERSION"
  
           echo "=== Uploading artifact to storage ==="
           az storage blob upload \
@@ -102,10 +114,9 @@ stages:
           echo "=== Running Image Builder (this may take a while) ==="
           az image builder run \
             --name $IMAGE_TEMPLATE \
-            --resource-group $RESOURCE_GROUP
-            --image-version $IMAGE_VERSION
-            --image-name vmdef1
+            --resource-group $RESOURCE_GROUP \
+            --image-version $NEW_VERSION \
+            --image-name $IMAGE_DEF
  
-          echo "=== New image version created in Azure Compute Gallery ==="
-
+          echo "=== New image version $NEW_VERSION created in Azure Compute Gallery ==="
 
