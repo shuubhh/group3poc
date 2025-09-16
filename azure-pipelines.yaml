@@ -76,6 +76,7 @@ stages:
           set -e
           RESOURCE_GROUP="finalpocgroup"
           GALLERY_NAME="gal1"
+          IMAGE_VERSION="2.0.0"
           IMAGE_DEF="vmdef1"
           IMAGE_TEMPLATE="vmdef1temp"
           LOCATION="NorthCentralUS"
@@ -102,6 +103,8 @@ stages:
           az image builder run \
             --name $IMAGE_TEMPLATE \
             --resource-group $RESOURCE_GROUP
+            --image-version $IMAGE_VERSION
  
           echo "=== New image version created in Azure Compute Gallery ==="
+
 
