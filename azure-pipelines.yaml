@@ -76,7 +76,7 @@ stages:
           set -e
           RESOURCE_GROUP="finalpocgroup"
           GALLERY_NAME="gal1"
-          IMAGE_VERSION=$(date +%Y.%m.%d.%H%M)
+          IMAGE_VERSION="2.0.0"
           IMAGE_DEF="vmdef1"
           IMAGE_TEMPLATE="vmdef1temp"
           LOCATION="NorthCentralUS"
