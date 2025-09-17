@@ -2,30 +2,53 @@
 set -e
  
 APP_DIR="/var/www/helloapp"
-ARTIFACT_URL="https://shubhstac.blob.core.windows.net/artifacts/app.zip"
+APP_URL="https://shubhstac.blob.core.windows.net/artifact/app.zip"
  
-echo "=== Updating application ==="
+echo "=== Installing prerequisites ==="
+sudo apt-get update -y
+sudo apt-get install -y unzip zip curl wget nodejs npm
  
-# Make sure app dir exists
+echo "=== Creating app directory ==="
 sudo mkdir -p $APP_DIR
-sudo chown -R $(whoami) $APP_DIR
+sudo chown -R $USER:$USER $APP_DIR
  
-# Download latest app artifact
-wget -O /tmp/app.zip "$ARTIFACT_URL"
+echo "=== Downloading latest app artifact ==="
+wget -O /tmp/app.zip "$APP_URL"
  
-# Clear old files
-sudo rm -rf $APP_DIR/*
+echo "=== Extracting app.zip ==="
+unzip -o /tmp/app.zip -d $APP_DIR
  
-# Extract new files
-sudo unzip /tmp/app.zip -d $APP_DIR
- 
-# Install node modules
+echo "=== Installing Node.js dependencies ==="
 cd $APP_DIR
 npm install --production
  
-# Restart service
-sudo systemctl daemon-reload
-sudo systemctl restart hello-vmss.service
+echo "=== Setting up systemd service ==="
+SERVICE_FILE="/etc/systemd/system/helloapp.service"
  
-echo "=== Application update complete ==="
+sudo tee $SERVICE_FILE > /dev/null <<EOL
+[Unit]
+Description=HelloApp Node.js Service
+After=network.target
+ 
+[Service]
+ExecStart=/usr/bin/node $APP_DIR/server.js
+WorkingDirectory=$APP_DIR
+Restart=always
+RestartSec=10
+User=$USER
+Environment=NODE_ENV=production
+StandardOutput=syslog
+StandardError=syslog
+SyslogIdentifier=helloapp
+ 
+[Install]
+WantedBy=multi-user.target
+EOL
+ 
+echo "=== Enabling and starting helloapp service ==="
+sudo systemctl daemon-reexec
+sudo systemctl enable helloapp
+sudo systemctl start helloapp
+ 
+echo "=== Installation complete. App should now be running on port 3000 ==="
  
