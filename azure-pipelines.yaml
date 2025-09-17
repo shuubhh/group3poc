@@ -1,11 +1,5 @@
 trigger:
-  - main
- 
-parameters:
-  - name: imageVersion
-    displayName: 'Image Version to Deploy (leave empty for latest)'
-    type: string
-    default: ''
+- main
  
 pool:
   name: "ap1"
@@ -17,23 +11,22 @@ stages:
 - stage: Build
   displayName: "Build Stage"
   jobs:
-    - job: Build
-      steps:
-        - task: NodeTool@0
-          inputs:
-            versionSpec: '20.x'
-          displayName: "Use Node.js"
+  - job: Build
+    steps:
+    - task: NodeTool@0
+      inputs:
+        versionSpec: '20.x'
+      displayName: "Use Node.js"
  
-        - script: |
-            npm install --production
-            zip -r app.zip *
-          displayName: "Build and Zip App"
- 
-        - task: PublishBuildArtifacts@1
-          inputs:
-            pathToPublish: "$(System.DefaultWorkingDirectory)/app.zip"
-            artifactName: "drop"
-          displayName: "Publish Artifact"
+    - script: |
+        npm install --production
+        zip -r app.zip *
+      displayName: "Build and Zip App"
+    - task: PublishBuildArtifacts@1
+      inputs:
+        pathToPublish: "$(System.DefaultWorkingDirectory)/app.zip"
+        artifactName: "drop"
+      displayName: "Publish Artifact"
  
 # ----------------------
 # 2. Test
@@ -42,133 +35,112 @@ stages:
   displayName: "Smoke Test Stage"
   dependsOn: Build
   jobs:
-    - job: SmokeTest
-      steps:
-        - task: DownloadBuildArtifacts@1
-          inputs:
-            artifactName: 'drop'
-            downloadPath: '$(Pipeline.Workspace)'
+  - job: SmokeTest
+    steps:
+    - task: DownloadBuildArtifacts@1
+      inputs:
+        artifactName: 'drop'
+        downloadPath: '$(Pipeline.Workspace)'
  
-        - script: |
-            mkdir test
-            cd test
-            unzip $(Pipeline.Workspace)/drop/app.zip
-            npm install --production
-            nohup npm start &
-            sleep 5
-            curl -f http://localhost:3000
-          displayName: "Run Smoke Test"
- 
+    - script: |
+        mkdir testt
+        cd testt
+        unzip $(Pipeline.Workspace)/drop/app.zip
+        npm install --production
+        nohup npm start &
+        sleep 5
+        curl -f http://localhost:3000
+      displayName: "Run Smoke Test"
 # ----------------------
-# 3. Deploy (Image Builder + VMSS Update)
+# 3. Deploy (VM → SIG → VMSS)
 # ----------------------
 - stage: Deploy
   displayName: "Deploy Stage"
   dependsOn: Test
   jobs:
-    - job: CreateImageAndUpdateVMSS
-      steps:
-        - task: DownloadBuildArtifacts@1
-          inputs:
-            artifactName: 'drop'
-            downloadPath: '$(Pipeline.Workspace)'
+  - job: DeployAndCapture
+    steps:
+    - task: DownloadBuildArtifacts@1
+      inputs:
+        artifactName: 'drop'
+        downloadPath: '$(Pipeline.Workspace)'
  
-        - task: AzureCLI@2
-          inputs:
-            azureSubscription: "azconnsvc"
-            scriptType: bash
-            scriptLocation: inlineScript
-            inlineScript: |
-              set -e
-              RESOURCE_GROUP="finalpocgroup"
-              GALLERY_NAME="gal1"
-              IMAGE_DEF="vmdef1"
-              IMAGE_TEMPLATE="vmdef1temp-$(date +%Y%m%d-%H%M%S)"
-              VMSS_NAME="vmss1"
-              LOCATION="NorthCentralUS"
-              STORAGE_ACCOUNT="shubhstac"
-              CONTAINER_NAME="artifacts"
-              ARTIFACT_PATH="$(Pipeline.Workspace)/drop/app.zip"
-              SUBSCRIPTION_ID="7c58d880-5fa8-46e0-809e-31e1bb700d40"
+    - task: AzureCLI@2
+      inputs:
+        azureSubscription: "azconnsvc"
+        scriptType: bash
+        scriptLocation: inlineScript
+        inlineScript: |
+          set -e
+          RESOURCE_GROUP="finalpocgroup"
+          LOCATION="northcentralus"
+          VM_NAME="buildvm"
+          IMAGE_DEF="defvm"
+          GALLERY_NAME="gal2"
+          VMSS_NAME="vmss1"
  
-              # Decide image version
-              if [ -n "${{ parameters.imageVersion }}" ]; then
-                DEPLOY_VERSION="${{ parameters.imageVersion }}"
-                echo "Using specified version: $DEPLOY_VERSION"
-                SKIP_BUILD=true
-              else
-                echo "=== Detecting latest image version ==="
-                LATEST_VERSION=$(az sig image-version list \
-                  --resource-group $RESOURCE_GROUP \
-                  --gallery-name $GALLERY_NAME \
-                  --gallery-image-definition $IMAGE_DEF \
-                  --query "[-1].name" -o tsv)
+          echo "=== Step 1: Create temporary VM ==="
+          az vm create \
+            --resource-group $RESOURCE_GROUP \
+            --name $VM_NAME \
+            --image Ubuntu2204 \
+            --admin-username azureuser \
+            --generate-ssh-keys \
+            --public-ip-sku Standard \
+            --size Standard_B2ms
  
-                if [ -z "$LATEST_VERSION" ]; then
-                  NEW_VERSION="0.0.1"
-                else
-                  IFS='.' read -r MAJOR MINOR PATCH <<< "$LATEST_VERSION"
-                  PATCH=$((PATCH+1))
-                  NEW_VERSION="$MAJOR.$MINOR.$PATCH"
-                fi
+          echo "=== Step 2: Upload and run install_app.sh ==="
+          # Assumes install_app.sh is in repo
+          az vm run-command invoke \
+            --resource-group $RESOURCE_GROUP \
+            --name $VM_NAME \
+            --command-id RunShellScript \
+            --scripts @"$(System.DefaultWorkingDirectory)/install_app.sh"
  
-                DEPLOY_VERSION=$NEW_VERSION
-                SKIP_BUILD=false
-                echo "Using new image version: $NEW_VERSION"
-              fi
+          echo "=== Step 3: Deprovision VM ==="
+          az vm run-command invoke \
+            --resource-group $RESOURCE_GROUP \
+            --name $VM_NAME \
+            --command-id RunShellScript \
+            --scripts "sudo waagent -deprovision+user -force"
  
-              if [ "$SKIP_BUILD" = false ]; then
-                echo "=== Uploading artifact to storage ==="
-                az storage blob upload \
-                  --account-name $STORAGE_ACCOUNT \
-                  --container-name $CONTAINER_NAME \
-                  --file $ARTIFACT_PATH \
-                  --name app.zip \
-                  --auth-mode login \
-                  --overwrite
+          az vm deallocate -g $RESOURCE_GROUP -n $VM_NAME
+          az vm generalize -g $RESOURCE_GROUP -n $VM_NAME
  
-                echo "=== Creating or updating Image Builder template ==="
-                sed "s/YOUR_SUBSCRIPTION_ID/$SUBSCRIPTION_ID/g; s/PLACEHOLDER_VERSION/$NEW_VERSION/g" image-template.json > temp-template.json
+          echo "=== Step 4: Create new SIG version ==="
+          LATEST_VERSION=$(az sig image-version list \
+            --resource-group $RESOURCE_GROUP \
+            --gallery-name $GALLERY_NAME \
+            --gallery-image-definition $IMAGE_DEF \
+            --query "[-1].name" -o tsv)
  
-                TEMPLATE_EXISTS=$(az image builder show --name $IMAGE_TEMPLATE --resource-group $RESOURCE_GROUP --query "name" -o tsv 2>/dev/null || echo "")
+          if [ -z "$LATEST_VERSION" ]; then
+            NEW_VERSION="0.0.0"
+          else
+            IFS='.' read -r MAJOR MINOR PATCH <<< "$LATEST_VERSION"
+            PATCH=$((PATCH+1))
+            NEW_VERSION="$MAJOR.$MINOR.$PATCH"
+          fi
  
-                if [ -z "$TEMPLATE_EXISTS" ]; then
-                  az image builder create \
-                    --resource-group $RESOURCE_GROUP \
-                    --name $IMAGE_TEMPLATE \
-                    --image-template temp-template.json
-                else
-                  az image builder update \
-                    --name $IMAGE_TEMPLATE \
-                    --resource-group $RESOURCE_GROUP \
-                    --set distribute[0].galleryImageId="/subscriptions/$SUBSCRIPTION_ID/resourceGroups/$RESOURCE_GROUP/providers/Microsoft.Compute/galleries/$GALLERY_NAME/images/$IMAGE_DEF/versions/$NEW_VERSION"
-                fi
+          echo "New version will be: $NEW_VERSION"
  
-                echo "=== Running Image Builder (this may take 10-15 minutes) ==="
-                az image builder run \
-                  --name $IMAGE_TEMPLATE \
-                  --resource-group $RESOURCE_GROUP
+          az sig image-version create \
+            --resource-group $RESOURCE_GROUP \
+            --gallery-name $GALLERY_NAME \
+            --gallery-image-definition $IMAGE_DEF \
+            --gallery-image-version $NEW_VERSION \
+            --managed-image "/subscriptions/$(az account show --query id -o tsv)/resourceGroups/$RESOURCE_GROUP/providers/Microsoft.Compute/virtualMachines/$VM_NAME"
  
-                echo "=== Image version $NEW_VERSION created successfully ==="
-              fi
+          echo "=== Step 5: Update VMSS to new version ==="
+          az vmss update \
+            --resource-group $RESOURCE_GROUP \
+            --name $VMSS_NAME \
+            --set virtualMachineProfile.storageProfile.imageReference.id="/subscriptions/$(az account show --query id -o tsv)/resourceGroups/$RESOURCE_GROUP/providers/Microsoft.Compute/galleries/$GALLERY_NAME/images/$IMAGE_DEF/versions/$NEW_VERSION"
  
-              echo "=== Updating VMSS with image version $DEPLOY_VERSION ==="
-              az vmss update \
-                --resource-group vmss1_group \
-                --name $VMSS_NAME \
-                --set virtualMachineProfile.storageProfile.imageReference.id="/subscriptions/$SUBSCRIPTION_ID/resourceGroups/$RESOURCE_GROUP/providers/Microsoft.Compute/galleries/$GALLERY_NAME/images/$IMAGE_DEF/versions/$DEPLOY_VERSION"
+          az vmss update-instances \
+            --resource-group vmss1_group \
+            --name $VMSS_NAME \
+            --instance-ids '*'
  
-              echo "=== Performing rolling update of VMSS instances ==="
-              az vmss update-instances \
-                --resource-group vmss1_group \
-                --name $VMSS_NAME \
-                --instance-ids "*"
- 
-              echo "=== Deployment complete! Version $DEPLOY_VERSION deployed to VMSS ==="
- 
-              echo "=== Available image versions ==="
-              az sig image-version list \
-                --resource-group $RESOURCE_GROUP \
-                --gallery-name $GALLERY_NAME \
-                --gallery-image-definition $IMAGE_DEF \
-                --query "[].name" -o table
+          echo "=== Step 6: Cleanup temp VM ==="
+          az vm delete -g $RESOURCE_GROUP -n $VM_NAME --yes
