@@ -3,7 +3,7 @@ trigger:
  
 parameters:
 - name: imageVersion
-  displayName: 2.0.3 #'Image Version to Deploy (leave empty for latest)'
+  displayName: 'Image Version to Deploy (leave empty for latest)'
   type: string
   default: ''
  
@@ -170,6 +170,7 @@ stages:
             --gallery-name $GALLERY_NAME \
             --gallery-image-definition $IMAGE_DEF \
             --query "[].name" -o table
+
 
 
 
