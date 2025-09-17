@@ -5,7 +5,7 @@
   "identity": {
     "type": "UserAssigned",
     "userAssignedIdentities": {
-      "/subscriptions/7c58d880-5fa8-46e0-809e-31e1bb700d40/resourcegroups/finalpocgroup/providers/Microsoft.ManagedIdentity/userAssignedIdentities/aibIdentity": {}
+      "/subscriptions/7c58d880-5fa8-46e0-809e-31e1bb700d40/resourcegroups/finalpocgroup/providers/Microsoft.ManagedIdentity/userAssignedIdentities/mi001": {}
     }
   },
   "properties": {
@@ -103,4 +103,5 @@
     },
     "buildTimeoutInMinutes": 60
   }
+
 }
