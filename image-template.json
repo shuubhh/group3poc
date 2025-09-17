@@ -1,0 +1,106 @@
+{
+  "type": "Microsoft.VirtualMachineImages/imageTemplates",
+  "apiVersion": "2022-02-14",
+  "location": "NorthCentralUS",
+  "identity": {
+    "type": "UserAssigned",
+    "userAssignedIdentities": {
+      "/subscriptions/7c58d880-5fa8-46e0-809e-31e1bb700d40/resourcegroups/finalpocgroup/providers/Microsoft.ManagedIdentity/userAssignedIdentities/aibIdentity": {}
+    }
+  },
+  "properties": {
+    "source": {
+      "type": "SharedImageVersion",
+      "imageVersionId": "/subscriptions/7c58d880-5fa8-46e0-809e-31e1bb700d40/resourceGroups/finalpocgroup/providers/Microsoft.Compute/galleries/gal1/images/vmdef1/versions/0.0.0"
+    },
+    "customize": [
+      {
+        "type": "Shell",
+        "name": "UpdateSystemAndDependencies",
+        "inline": [
+          "echo '🔹 Updating system packages...'",
+          "sudo apt-get update -y",
+          "sudo apt-get install -y nodejs npm unzip curl"
+        ]
+      },
+      {
+        "type": "Shell",
+        "name": "StopExistingApp",
+        "inline": [
+          "echo '🔹 Stopping existing application...'",
+          "pm2 stop helloapp || true",
+          "pm2 delete helloapp || true"
+        ]
+      },
+      {
+        "type": "Shell",
+        "name": "UpdateApplication",
+        "inline": [
+          "echo '🔹 Setting up application directory...'",
+          "APP_DIR=/var/www/helloapp",
+          "sudo mkdir -p $APP_DIR",
+          "sudo rm -rf $APP_DIR/*",
+          "echo '🔹 Downloading new application version...'",
+          "cd /tmp",
+          "sudo curl -f -o app.zip 'https://shubhstac.blob.core.windows.net/artifacts/app.zip'",
+          "echo '🔹 Extracting application...'",
+          "sudo unzip -o app.zip",
+          "sudo rm app.zip",
+          "echo '🔹 Copying build artifacts...'",
+          "sudo cp -r * $APP_DIR/",
+          "cd $APP_DIR",
+          "echo '🔹 Installing dependencies...'",
+          "sudo npm install",
+          "echo '🔹 Setting correct permissions...'",
+          "sudo chown -R $USER:$USER $APP_DIR"
+        ]
+      },
+      {
+        "type": "Shell",
+        "name": "SetupPM2AndStartApp",
+        "inline": [
+          "echo '🔹 Installing PM2 globally...'",
+          "sudo npm install -g pm2",
+          "APP_DIR=/var/www/helloapp",
+          "cd $APP_DIR",
+          "echo '🔹 Starting app with PM2...'",
+          "pm2 start server.js --name helloapp || pm2 restart helloapp",
+          "echo '🔹 Setting up PM2 startup...'",
+          "pm2 startup systemd -u $USER --hp $HOME --silent",
+          "pm2 save",
+          "echo '✅ Application setup complete!'"
+        ]
+      },
+      {
+        "type": "Shell",
+        "name": "VerifyApplication",
+        "inline": [
+          "echo '🔹 Verifying application installation...'",
+          "APP_DIR=/var/www/helloapp",
+          "ls -la $APP_DIR/",
+          "echo '🔹 Checking required files exist...'",
+          "test -f $APP_DIR/package.json && echo 'package.json found' || echo 'ERROR: package.json missing'",
+          "test -f $APP_DIR/server.js && echo 'server.js found' || echo 'ERROR: server.js missing'",
+          "test -d $APP_DIR/node_modules && echo 'node_modules found' || echo 'ERROR: node_modules missing'",
+          "echo '🔹 Checking PM2 process...'",
+          "pm2 list | grep helloapp && echo 'PM2 process running' || echo 'WARNING: PM2 process not found'",
+          "echo '✅ Verification completed!'"
+        ]
+      }
+    ],
+    "distribute": [
+      {
+        "type": "SharedImage",
+        "galleryImageId": "/subscriptions/7c58d880-5fa8-46e0-809e-31e1bb700d40/resourceGroups/finalpocgroup/providers/Microsoft.Compute/galleries/gal1/images/vmdef1/versions/PLACEHOLDER_VERSION",
+        "runOutputName": "updatedAppImage",
+        "replicationRegions": ["NorthCentralUS"],
+        "excludeFromLatest": false
+      }
+    ],
+    "vmProfile": {
+      "vmSize": "Standard_B2s",
+      "osDiskSizeGB": 32
+    },
+    "buildTimeoutInMinutes": 60
+  }
+}
