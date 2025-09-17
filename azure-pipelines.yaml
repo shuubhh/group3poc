@@ -162,7 +162,7 @@ stages:
             --name $VMSS_NAME \
             --instance-ids "*"
  
-          echo "=== Deployment complete! Version $DEPLOY_VERSION deployed to VMSS ==="
+          echo "=== Deployment complete!Version $DEPLOY_VERSION deployed to VMSS ==="
           
           echo "=== Available image versions ==="
           az sig image-version list \
@@ -170,6 +170,7 @@ stages:
             --gallery-name $GALLERY_NAME \
             --gallery-image-definition $IMAGE_DEF \
             --query "[].name" -o table
+
 
 
 
