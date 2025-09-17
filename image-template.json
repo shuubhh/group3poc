@@ -19,8 +19,7 @@
         "name": "UpdateSystemAndDependencies",
         "inline": [
           "echo '🔹 Updating system packages...'",
-          "sudo apt-get update -y",
-          "sudo apt-get install -y nodejs npm unzip curl"
+          "sudo apt-get update -y"
         ]
       },
       {
@@ -135,3 +134,4 @@
   }
 }
  
+
