@@ -152,7 +152,7 @@ stages:
  
           echo "=== Updating VMSS with image version $DEPLOY_VERSION ==="
           az vmss update \
-            --resource-group $RESOURCE_GROUP \
+            --resource-group vmss1_group \
             --name $VMSS_NAME \
             --set virtualMachineProfile.storageProfile.imageReference.id="/subscriptions/$SUBSCRIPTION_ID/resourceGroups/$RESOURCE_GROUP/providers/Microsoft.Compute/galleries/$GALLERY_NAME/images/$IMAGE_DEF/versions/$DEPLOY_VERSION"
  
@@ -170,5 +170,6 @@ stages:
             --gallery-name $GALLERY_NAME \
             --gallery-image-definition $IMAGE_DEF \
             --query "[].name" -o table
+
 
 
