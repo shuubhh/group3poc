@@ -74,7 +74,7 @@ stages:
           set -e
           RESOURCE_GROUP="finalpocgroup"
           LOCATION="northcentralus"
-          VM_NAME="buildvm"
+          VM_NAME="tempvm"
           IMAGE_DEF="defvm"
           GALLERY_NAME="gal2"
           VMSS_NAME="vmss1"
