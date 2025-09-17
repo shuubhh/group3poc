@@ -81,7 +81,7 @@ stages:
           RESOURCE_GROUP="finalpocgroup"
           GALLERY_NAME="gal1"
           IMAGE_DEF="vmdef1"
-          IMAGE_TEMPLATE="vmdef1temp"
+          IMAGE_TEMPLATE="vmdef1temp-$(date +%Y%m%d-%H%M%S)"
           VMSS_NAME="vmss1"
           LOCATION="NorthCentralUS"
           STORAGE_ACCOUNT="shubhstac"
@@ -170,3 +170,4 @@ stages:
             --gallery-name $GALLERY_NAME \
             --gallery-image-definition $IMAGE_DEF \
             --query "[].name" -o table
+
