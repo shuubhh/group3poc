@@ -111,30 +111,43 @@ stages:
           sleep 30
 
           echo "=== Step 3: Install application on VM ==="
-          az vm run-command invoke \
-            --resource-group $RESOURCE_GROUP \
-            --name $VM_NAME \
-            --command-id RunShellScript \
-            --scripts @"$(System.DefaultWorkingDirectory)/install_app.sh"
+          # Get VM public IP for SSH access
+          VM_PUBLIC_IP=$(az vm show -d -g $RESOURCE_GROUP -n $VM_NAME --query publicIps -o tsv)
+          echo "VM Public IP: $VM_PUBLIC_IP"
+
+          # Wait for SSH to be ready
+          echo "Waiting for SSH to be available..."
+          for i in {1..30}; do
+            if ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 azureuser@$VM_PUBLIC_IP "echo 'SSH Ready'" 2>/dev/null; then
+              echo "SSH connection established"
+              break
+            fi
+            echo "Attempt $i/30: SSH not ready, waiting 10 seconds..."
+            sleep 10
+          done
+
+          # Upload and run install script via SSH
+          echo "Uploading install script via SSH..."
+          scp -o StrictHostKeyChecking=no "$(System.DefaultWorkingDirectory)/install_app.sh" azureuser@$VM_PUBLIC_IP:/tmp/install_app.sh
+
+          echo "Running install script via SSH..."
+          ssh -o StrictHostKeyChecking=no azureuser@$VM_PUBLIC_IP "chmod +x /tmp/install_app.sh && sudo /tmp/install_app.sh"
 
           echo "=== Step 4: Prepare VM for capture ==="
-          az vm run-command invoke \
-            --resource-group $RESOURCE_GROUP \
-            --name $VM_NAME \
-            --command-id RunShellScript \
-            --scripts "
-              echo 'Stopping walinuxagent...'
-              sudo systemctl stop walinuxagent || true
-              echo 'Cleaning waagent data...'
-              sudo rm -rf /var/lib/waagent/* || true
-              sudo rm -f /var/log/waagent.log || true
-              echo 'Running cloud-init clean...'
-              sudo cloud-init clean --seed --logs || true
-              sudo rm -rf /var/lib/cloud/ || true
-              echo 'Syncing filesystem...'
-              sudo sync
-              echo 'VM preparation complete'
-            "
+          echo "Preparing VM for capture via SSH..."
+          ssh -o StrictHostKeyChecking=no azureuser@$VM_PUBLIC_IP "
+            echo 'Stopping walinuxagent...'
+            sudo systemctl stop walinuxagent || true
+            echo 'Cleaning waagent data...'
+            sudo rm -rf /var/lib/waagent/* || true
+            sudo rm -f /var/log/waagent.log || true
+            echo 'Running cloud-init clean...'
+            sudo cloud-init clean --seed --logs || true
+            sudo rm -rf /var/lib/cloud/ || true
+            echo 'Syncing filesystem...'
+            sudo sync
+            echo 'VM preparation complete'
+          "
 
           echo "=== Step 5: Deallocate and generalize VM ==="
           az vm deallocate --resource-group $RESOURCE_GROUP --name $VM_NAME
