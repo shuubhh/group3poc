@@ -119,7 +119,11 @@ stages:
           echo "Waiting for application installation to complete..."
           sleep 60
 
-          echo "=== Step 3: Stop VM services and prepare for capture ==="
+          echo "=== Step 3: Refresh authentication token ==="
+          # Refresh the token to avoid expiration issues
+          az account get-access-token > /dev/null
+
+          echo "=== Step 4: Stop VM services and prepare for capture ==="
           az vm run-command invoke \
             --resource-group $RESOURCE_GROUP \
             --name $VM_NAME \
@@ -133,7 +137,10 @@ stages:
               sudo sync
             "
 
-          echo "=== Step 4: Deallocate and generalize VM ==="
+          echo "=== Step 5: Deallocate and generalize VM ==="
+          # Refresh token before long-running operations
+          az account get-access-token > /dev/null
+          
           az vm deallocate \
             --resource-group $RESOURCE_GROUP \
             --name $VM_NAME
@@ -142,7 +149,10 @@ stages:
             --resource-group $RESOURCE_GROUP \
             --name $VM_NAME
 
-          echo "=== Step 5: Create new SIG version ==="
+          echo "=== Step 6: Create new SIG version ==="
+          # Refresh token again before SIG operations
+          az account get-access-token > /dev/null
+          
           SUBSCRIPTION_ID=$(az account show --query id -o tsv)
           
           # Get latest version and increment
@@ -172,17 +182,26 @@ stages:
             --replica-count 1 \
             --target-regions $LOCATION
 
-          echo "=== Step 6: Wait for image version creation to complete ==="
+          echo "=== Step 7: Wait for image version creation to complete ==="
           echo "Waiting for image version creation..."
-          while true; do
+          
+          TIMEOUT=1800  # 30 minutes timeout
+          ELAPSED=0
+          
+          while [ $ELAPSED -lt $TIMEOUT ]; do
+            # Refresh token periodically during long waits
+            if [ $((ELAPSED % 300)) -eq 0 ]; then
+              az account get-access-token > /dev/null
+            fi
+            
             PROVISIONING_STATE=$(az sig image-version show \
               --resource-group $RESOURCE_GROUP \
               --gallery-name $GALLERY_NAME \
               --gallery-image-definition $IMAGE_DEF \
               --gallery-image-version $NEW_VERSION \
-              --query provisioningState -o tsv)
+              --query provisioningState -o tsv 2>/dev/null || echo "NotFound")
             
-            echo "Current provisioning state: $PROVISIONING_STATE"
+            echo "Current provisioning state: $PROVISIONING_STATE (${ELAPSED}s elapsed)"
             
             if [ "$PROVISIONING_STATE" = "Succeeded" ]; then
               echo "Image version created successfully"
@@ -193,9 +212,17 @@ stages:
             fi
             
             sleep 30
+            ELAPSED=$((ELAPSED + 30))
           done
+          
+          if [ $ELAPSED -ge $TIMEOUT ]; then
+            echo "Timeout waiting for image version creation"
+            exit 1
+          fi
 
-          echo "=== Step 7: Update VMSS to new version ==="
+          echo "=== Step 8: Update VMSS to new version ==="
+          # Refresh token before VMSS operations
+          az account get-access-token > /dev/null
           NEW_IMAGE_ID="/subscriptions/$SUBSCRIPTION_ID/resourceGroups/$RESOURCE_GROUP/providers/Microsoft.Compute/galleries/$GALLERY_NAME/images/$IMAGE_DEF/versions/$NEW_VERSION"
           
           az vmss update \
@@ -210,6 +237,8 @@ stages:
             --instance-ids '*'
 
           echo "=== Step 9: Cleanup temporary VM ==="
+          # Final token refresh before cleanup
+          az account get-access-token > /dev/null
           az vm delete \
             --resource-group $RESOURCE_GROUP \
             --name $VM_NAME \
