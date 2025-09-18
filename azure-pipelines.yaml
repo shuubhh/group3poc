@@ -79,7 +79,7 @@ stages:
           RESOURCE_GROUP="finalpocgroup"
           LOCATION="northcentralus"
           VM_NAME="tempvm-$(Build.BuildId)"
-          IMAGE_DEF="defvm"
+          IMAGE_DEF="defvm01"
           GALLERY_NAME="gal2"
           VMSS_NAME="vmss1"
           VMSS_RESOURCE_GROUP="vmss1_group"
@@ -96,8 +96,7 @@ stages:
             --auth-mode login \
             --overwrite
 
-          echo "=== Step 2: Create temporary VM (with Standard security type) ==="
-          # Create VM with Standard security type to match SIG definition
+          echo "=== Step 2: Create temporary VM ==="
           az vm create \
             --resource-group $RESOURCE_GROUP \
             --name $VM_NAME \
@@ -106,8 +105,7 @@ stages:
             --generate-ssh-keys \
             --public-ip-sku Standard \
             --size Standard_B2ms \
-            --location $LOCATION \
-            --security-type Standard  # ADDED: Force Standard security type
+            --location $LOCATION
 
           echo "Waiting for VM to be fully provisioned..."
           sleep 30
@@ -159,27 +157,7 @@ stages:
           echo "Waiting for generalization to complete..."
           sleep 30
 
-          echo "=== Step 6: Check and update SIG image definition security type if needed ==="
-          # Check current security type of the image definition
-          CURRENT_SECURITY_TYPE=$(az sig image-definition show \
-            --resource-group $RESOURCE_GROUP \
-            --gallery-name $GALLERY_NAME \
-            --gallery-image-definition $IMAGE_DEF \
-            --query "features[?name=='SecurityType'].value" -o tsv 2>/dev/null || echo "None")
-
-          echo "Current image definition security type: $CURRENT_SECURITY_TYPE"
-
-          # If security type is None, we need to update it to match our VM (Standard)
-          if [ "$CURRENT_SECURITY_TYPE" = "None" ]; then
-            echo "Updating image definition security type to Standard..."
-            az sig image-definition update \
-              --resource-group $RESOURCE_GROUP \
-              --gallery-name $GALLERY_NAME \
-              --gallery-image-definition $IMAGE_DEF \
-              --features SecurityType=Standard
-          fi
-
-          echo "=== Step 7: Create new SIG version ==="
+          echo "=== Step 6: Create new SIG version ==="
           SUBSCRIPTION_ID=$(az account show --query id -o tsv)
 
           LATEST_VERSION=$(az sig image-version list \
@@ -198,9 +176,10 @@ stages:
 
           echo "Creating image version: $NEW_VERSION"
 
+          # FIXED: Use --virtual-machine instead of --managed-image
           VIRTUAL_MACHINE_ID="/subscriptions/$SUBSCRIPTION_ID/resourceGroups/$RESOURCE_GROUP/providers/Microsoft.Compute/virtualMachines/$VM_NAME"
 
-          # Create image version
+          # Start image creation with correct parameter
           az sig image-version create \
             --resource-group $RESOURCE_GROUP \
             --gallery-name $GALLERY_NAME \
@@ -212,7 +191,7 @@ stages:
 
           echo "✅ Image version created: $NEW_VERSION"
 
-          echo "=== Step 8: Update VMSS to new version ==="
+          echo "=== Step 7: Update VMSS to new version ==="
           NEW_IMAGE_ID="/subscriptions/$SUBSCRIPTION_ID/resourceGroups/$RESOURCE_GROUP/providers/Microsoft.Compute/galleries/$GALLERY_NAME/images/$IMAGE_DEF/versions/$NEW_VERSION"
 
           az vmss update \
@@ -225,7 +204,7 @@ stages:
             --name $VMSS_NAME \
             --instance-ids '*'
 
-          echo "=== Step 9: Cleanup temp VM ==="
+          echo "=== Step 8: Cleanup temp VM ==="
           az vm delete -g $RESOURCE_GROUP -n $VM_NAME --yes --no-wait
 
           # Clean up associated resources
