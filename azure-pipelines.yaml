@@ -120,7 +120,7 @@ stages:
             --scripts @"$(System.DefaultWorkingDirectory)/install_app.sh"
  
           echo "VM Name: $VM_NAME"
-          echo "##vso[task.setvariable;isOutput=true]VM_NAME=$VM_NAME"
+          echo "##vso[task.setvariable;isOutput=true;]VM_NAME=$VM_NAME"
       name: CreateVMStep
  
 # ----------------------
@@ -195,7 +195,7 @@ stages:
             --no-wait
  
           echo "Image version creation started: $NEW_VERSION"
-          echo "##vso[task.setvariable;isOutput=true]NEW_VERSION=$NEW_VERSION"
+          echo "##vso[task.setvariable;isOutput=true;]NEW_VERSION=$NEW_VERSION"
       name: CaptureStep
  
 # ----------------------
