@@ -329,6 +329,4 @@ stages:
           else
             echo "No VM name found, skipping cleanup"
           fi
-app.zip
-This domain may be for sale!
  
