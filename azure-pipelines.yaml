@@ -81,7 +81,7 @@ stages:
           VM_NAME="tempvm-$(Build.BuildId)"
           IMAGE_DEF="defvm01"
           GALLERY_NAME="gal2"
-          VMSS_NAME="vmss1"
+          VMSS_NAME="vmss01"
           VMSS_RESOURCE_GROUP="vmss1_group"
           STORAGE_ACCOUNT="shubhstac"
           CONTAINER_NAME="artifact"
