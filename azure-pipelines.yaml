@@ -1,9 +1,9 @@
 trigger:
 - main
- 
+
 pool:
   name: "ap1"
- 
+
 stages:
 # ----------------------
 # 1. Build
@@ -17,7 +17,7 @@ stages:
       inputs:
         versionSpec: '20.x'
       displayName: "Use Node.js"
- 
+
     - script: |
         npm install --production
         zip -r app.zip *
@@ -27,7 +27,7 @@ stages:
         pathToPublish: "$(System.DefaultWorkingDirectory)/app.zip"
         artifactName: "drop"
       displayName: "Publish Artifact"
- 
+
 # ----------------------
 # 2. Test
 # ----------------------
@@ -41,7 +41,7 @@ stages:
       inputs:
         artifactName: 'drop'
         downloadPath: '$(Pipeline.Workspace)'
- 
+
     - script: |
         mkdir test
         cd test
@@ -51,6 +51,7 @@ stages:
         sleep 5
         curl -f http://localhost:3001
       displayName: "Run Smoke Test"
+
 # ----------------------
 # 3. Deploy (VM → SIG → VMSS)
 # ----------------------
@@ -64,7 +65,7 @@ stages:
       inputs:
         artifactName: 'drop'
         downloadPath: '$(Pipeline.Workspace)'
- 
+
     - task: AzureCLI@2
       inputs:
         azureSubscription: "azconnsvc"
@@ -74,10 +75,11 @@ stages:
           set -e
           RESOURCE_GROUP="finalpocgroup"
           LOCATION="northcentralus"
-          VM_NAME="tempvm"
+          VM_NAME="tempvm-$(Build.BuildId)"  # Make VM name unique
           IMAGE_DEF="defvm"
           GALLERY_NAME="gal2"
           VMSS_NAME="vmss1"
+          VMSS_RESOURCE_GROUP="vmss1_group"
           STORAGE_ACCOUNT="shubhstac"
           CONTAINER_NAME="artifact"
           ARTIFACT_PATH="$(Pipeline.Workspace)/drop/app.zip"
@@ -90,7 +92,7 @@ stages:
             --name app.zip \
             --auth-mode login \
             --overwrite
- 
+
           echo "=== Step 1: Create temporary VM ==="
           az vm create \
             --resource-group $RESOURCE_GROUP \
@@ -99,59 +101,143 @@ stages:
             --admin-username azureuser \
             --generate-ssh-keys \
             --public-ip-sku Standard \
-            --size Standard_B2ms
- 
-          echo "=== Step 2: Upload and run install_app.sh ==="
+            --size Standard_B2ms \
+            --location $LOCATION
+
+          # Wait for VM to be fully provisioned
+          echo "Waiting for VM to be fully provisioned..."
+          sleep 30
+
+          echo "=== Step 2: Install application on VM ==="
           az vm run-command invoke \
             --resource-group $RESOURCE_GROUP \
             --name $VM_NAME \
             --command-id RunShellScript \
             --scripts @"$(System.DefaultWorkingDirectory)/install_app.sh"
- 
-          echo "=== Step 3: Deprovision VM for capture ==="
+
+          # Wait for installation to complete
+          echo "Waiting for application installation to complete..."
+          sleep 60
+
+          echo "=== Step 3: Stop VM services and prepare for capture ==="
           az vm run-command invoke \
             --resource-group $RESOURCE_GROUP \
             --name $VM_NAME \
             --command-id RunShellScript \
-            --scripts "sudo waagent -deprovision+user -force"
- 
-          az vm deallocate -g $RESOURCE_GROUP -n $VM_NAME
-          az vm generalize -g $RESOURCE_GROUP -n $VM_NAME
- 
-          echo "=== Step 4: Create new SIG version ==="
+            --scripts "
+              sudo systemctl stop walinuxagent
+              sudo rm -rf /var/lib/waagent/*
+              sudo rm -f /var/log/waagent.log
+              sudo cloud-init clean --seed --logs
+              sudo rm -rf /var/lib/cloud/
+              sudo sync
+            "
+
+          echo "=== Step 4: Deallocate and generalize VM ==="
+          az vm deallocate \
+            --resource-group $RESOURCE_GROUP \
+            --name $VM_NAME
+
+          az vm generalize \
+            --resource-group $RESOURCE_GROUP \
+            --name $VM_NAME
+
+          echo "=== Step 5: Create new SIG version ==="
+          SUBSCRIPTION_ID=$(az account show --query id -o tsv)
+          
+          # Get latest version and increment
           LATEST_VERSION=$(az sig image-version list \
             --resource-group $RESOURCE_GROUP \
             --gallery-name $GALLERY_NAME \
             --gallery-image-definition $IMAGE_DEF \
-            --query "[-1].name" -o tsv)
- 
-          if [ -z "$LATEST_VERSION" ]; then
-            NEW_VERSION="0.0.0"
+            --query "max_by([], &name).name" -o tsv 2>/dev/null || echo "")
+
+          if [ -z "$LATEST_VERSION" ] || [ "$LATEST_VERSION" = "null" ]; then
+            NEW_VERSION="1.0.0"
           else
             IFS='.' read -r MAJOR MINOR PATCH <<< "$LATEST_VERSION"
             PATCH=$((PATCH+1))
             NEW_VERSION="$MAJOR.$MINOR.$PATCH"
           fi
- 
-          echo "New version will be: $NEW_VERSION"
- 
+
+          echo "Creating new version: $NEW_VERSION"
+
+          # Create image version from the generalized VM
           az sig image-version create \
             --resource-group $RESOURCE_GROUP \
             --gallery-name $GALLERY_NAME \
             --gallery-image-definition $IMAGE_DEF \
             --gallery-image-version $NEW_VERSION \
-            --managed-image "/subscriptions/$(az account show --query id -o tsv)/resourceGroups/$RESOURCE_GROUP/providers/Microsoft.Compute/virtualMachines/$VM_NAME"
- 
-          echo "=== Step 5: Update VMSS to new version ==="
+            --managed-image "/subscriptions/$SUBSCRIPTION_ID/resourceGroups/$RESOURCE_GROUP/providers/Microsoft.Compute/virtualMachines/$VM_NAME" \
+            --replica-count 1 \
+            --target-regions $LOCATION
+
+          echo "=== Step 6: Wait for image version creation to complete ==="
+          echo "Waiting for image version creation..."
+          while true; do
+            PROVISIONING_STATE=$(az sig image-version show \
+              --resource-group $RESOURCE_GROUP \
+              --gallery-name $GALLERY_NAME \
+              --gallery-image-definition $IMAGE_DEF \
+              --gallery-image-version $NEW_VERSION \
+              --query provisioningState -o tsv)
+            
+            echo "Current provisioning state: $PROVISIONING_STATE"
+            
+            if [ "$PROVISIONING_STATE" = "Succeeded" ]; then
+              echo "Image version created successfully"
+              break
+            elif [ "$PROVISIONING_STATE" = "Failed" ]; then
+              echo "Image version creation failed"
+              exit 1
+            fi
+            
+            sleep 30
+          done
+
+          echo "=== Step 7: Update VMSS to new version ==="
+          NEW_IMAGE_ID="/subscriptions/$SUBSCRIPTION_ID/resourceGroups/$RESOURCE_GROUP/providers/Microsoft.Compute/galleries/$GALLERY_NAME/images/$IMAGE_DEF/versions/$NEW_VERSION"
+          
           az vmss update \
-            --resource-group vmss1_group \
+            --resource-group $VMSS_RESOURCE_GROUP \
             --name $VMSS_NAME \
-            --set virtualMachineProfile.storageProfile.imageReference.id="/subscriptions/$(az account show --query id -o tsv)/resourceGroups/$RESOURCE_GROUP/providers/Microsoft.Compute/galleries/$GALLERY_NAME/images/$IMAGE_DEF/versions/$NEW_VERSION"
- 
+            --set virtualMachineProfile.storageProfile.imageReference.id="$NEW_IMAGE_ID"
+
+          echo "=== Step 8: Update VMSS instances ==="
           az vmss update-instances \
-            --resource-group vmss1_group \
+            --resource-group $VMSS_RESOURCE_GROUP \
             --name $VMSS_NAME \
             --instance-ids '*'
- 
-          echo "=== Step 6: Cleanup temp VM ==="
-          az vm delete -g $RESOURCE_GROUP -n $VM_NAME --yes
+
+          echo "=== Step 9: Cleanup temporary VM ==="
+          az vm delete \
+            --resource-group $RESOURCE_GROUP \
+            --name $VM_NAME \
+            --yes \
+            --no-wait
+
+          # Clean up associated resources
+          az disk delete \
+            --resource-group $RESOURCE_GROUP \
+            --name "${VM_NAME}_OsDisk_1_*" \
+            --yes \
+            --no-wait 2>/dev/null || true
+
+          az network public-ip delete \
+            --resource-group $RESOURCE_GROUP \
+            --name "${VM_NAME}PublicIP" \
+            --no-wait 2>/dev/null || true
+
+          az network nsg delete \
+            --resource-group $RESOURCE_GROUP \
+            --name "${VM_NAME}NSG" \
+            --no-wait 2>/dev/null || true
+
+          az network vnet delete \
+            --resource-group $RESOURCE_GROUP \
+            --name "${VM_NAME}VNET" \
+            --no-wait 2>/dev/null || true
+
+          echo "=== Deployment completed successfully ==="
+          echo "New image version: $NEW_VERSION"
+          echo "VMSS updated with new image"
