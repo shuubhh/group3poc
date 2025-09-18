@@ -153,9 +153,13 @@ stages:
           az vm deallocate --resource-group $RESOURCE_GROUP --name $VM_NAME
           az vm generalize --resource-group $RESOURCE_GROUP --name $VM_NAME
 
+          # Add wait to ensure generalization completes
+          echo "Waiting for generalization to complete..."
+          sleep 30
+
           echo "=== Step 6: Create new SIG version ==="
           SUBSCRIPTION_ID=$(az account show --query id -o tsv)
-          
+
           LATEST_VERSION=$(az sig image-version list \
             --resource-group $RESOURCE_GROUP \
             --gallery-name $GALLERY_NAME \
@@ -172,13 +176,16 @@ stages:
 
           echo "Creating image version: $NEW_VERSION"
 
-          # Start image creation and wait for completion
+          # FIXED: Use --virtual-machine instead of --managed-image
+          VIRTUAL_MACHINE_ID="/subscriptions/$SUBSCRIPTION_ID/resourceGroups/$RESOURCE_GROUP/providers/Microsoft.Compute/virtualMachines/$VM_NAME"
+
+          # Start image creation with correct parameter
           az sig image-version create \
             --resource-group $RESOURCE_GROUP \
             --gallery-name $GALLERY_NAME \
             --gallery-image-definition $IMAGE_DEF \
             --gallery-image-version $NEW_VERSION \
-            --managed-image "/subscriptions/$SUBSCRIPTION_ID/resourceGroups/$RESOURCE_GROUP/providers/Microsoft.Compute/virtualMachines/$VM_NAME" \
+            --virtual-machine "$VIRTUAL_MACHINE_ID" \
             --replica-count 1 \
             --target-regions $LOCATION
 
@@ -186,7 +193,7 @@ stages:
 
           echo "=== Step 7: Update VMSS to new version ==="
           NEW_IMAGE_ID="/subscriptions/$SUBSCRIPTION_ID/resourceGroups/$RESOURCE_GROUP/providers/Microsoft.Compute/galleries/$GALLERY_NAME/images/$IMAGE_DEF/versions/$NEW_VERSION"
-          
+
           az vmss update \
             --resource-group $VMSS_RESOURCE_GROUP \
             --name $VMSS_NAME \
